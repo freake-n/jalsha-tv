@@ -1,4 +1,4 @@
-const CACHE = 'jalsha-tv-shell-v4';
+const CACHE = 'jalsha-tv-shell-v5';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon.svg'];
 self.addEventListener('install', event => {
   self.skipWaiting();
