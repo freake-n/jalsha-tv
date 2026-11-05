@@ -210,9 +210,16 @@ footer{text-align:center;color:#5f6b82;font-size:12px;padding:12px 10px 28px}
     <div class="sheet-head"><h2 id="editorTitle">Add serial</h2><button class="x" id="cancel" aria-label="Close">×</button></div>
     <label class="field"><span>Serial name</span><input id="name" maxlength="70" placeholder="e.g. Ashirbad" autocomplete="off"></label>
     <label class="field"><span>JioHotstar show or latest-episode link</span><input id="url" type="url" inputmode="url" placeholder="https://www.hotstar.com/..."></label>
-    <label class="field"><span>Poster image link (optional)</span><input id="image" type="url" inputmode="url" placeholder="https://..."></label>
-    <div class="preview" id="preview"><div class="thumb" id="pvThumb"></div><span>Poster preview</span></div>
-    <p class="hint">In JioHotstar, use Share to copy a show or episode link. A show link opens the show page; an episode link opens that episode.</p>
+    <div class="field">
+      <span>Poster image</span>
+      <div class="actions" style="margin-top:0">
+        <button class="btn soft" type="button" id="choosePoster">Choose from gallery</button>
+        <button class="btn soft" type="button" id="removePoster">Remove poster</button>
+        <input id="posterFile" type="file" accept="image/*" hidden>
+      </div>
+      <div class="preview" id="preview"><div class="thumb" id="pvThumb"></div><span id="previewLabel">Poster preview</span></div>
+    </div>
+    <p class="hint">Choose a poster image from your tablet's gallery. It is automatically resized and saved inside Jalsha TV, so you do not need an image URL. In JioHotstar, use Share to copy a show or episode link.</p>
     <div class="actions">
       <button class="btn primary" id="save">Save</button>
       <button class="btn soft" id="cancel2">Cancel</button>
@@ -227,7 +234,7 @@ footer{text-align:center;color:#5f6b82;font-size:12px;padding:12px 10px 28px}
 const defaults=['Ashirbad','Tilottama','Kumkum','Pratigga','Parashuram','Professor Bidya Banerjee','Gangaa'];
 const palette=['#a0693f','#8b4f9a','#b0475a','#5f58b8','#2f8294','#a68437','#3b7fb0'];
 const KEY='jalsha-tv-shows-v1';
-let shows=[],editing=null,firstRender=true;
+let shows=[],editing=null,firstRender=true,pendingImage='';
 const $=id=>document.getElementById(id);
 const PLAY='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.6v14.8a1 1 0 0 0 1.5.86l12-7.4a1 1 0 0 0 0-1.72l-12-7.4A1 1 0 0 0 7 4.6z"/></svg>';
 const PEN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>';
@@ -235,6 +242,11 @@ const uid=()=>crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math
 
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 function safeUrl(v){try{const u=new URL(v);return['https:','http:'].includes(u.protocol)?u.href:''}catch(e){return''}}
+function safeImage(v){
+  const value=String(v||'').trim();
+  if(/^data:image\/(?:png|jpeg|webp|gif);base64,/i.test(value))return value;
+  return safeUrl(value);
+}
 function load(){
   try{const v=JSON.parse(localStorage.getItem(KEY));if(Array.isArray(v)){shows=v;return}}catch(e){}
   shows=defaults.map((name,i)=>({id:uid(),name,url:'',image:'',color:palette[i%palette.length]}));saveData();
@@ -244,7 +256,7 @@ function greeting(){const h=new Date().getHours();return h<5?'শুভ রা�
 
 function makePoster(s,cls){
   const p=el('div',cls||'poster');p.style.setProperty('--c',s.color||'#67536e');
-  const link=safeUrl(s.image||'');
+  const link=safeImage(s.image||'');
   if(link){const img=document.createElement('img');img.src=link;img.alt='';img.loading='lazy';img.decoding='async';img.referrerPolicy='no-referrer';img.onerror=()=>img.remove();p.append(img)}
   p.append(el('div','initial',(s.name||'?').trim().charAt(0).toUpperCase()));
   return p;
@@ -357,14 +369,52 @@ function renderManager(){
   });
 }
 function updatePreview(){
-  const u=safeUrl($('image').value.trim()),pv=$('preview');
+  const pv=$('preview'),u=safeImage(pendingImage);
   pv.classList.toggle('show',!!u);
-  if(u){const t=$('pvThumb');t.innerHTML='';const im=document.createElement('img');im.src=u;im.alt='';im.referrerPolicy='no-referrer';im.onerror=()=>pv.classList.remove('show');t.append(im)}
+  $('removePoster').hidden=!u;
+  if(u){
+    const t=$('pvThumb');t.innerHTML='';
+    const im=document.createElement('img');im.src=u;im.alt='';im.onerror=()=>{pv.classList.remove('show')};
+    t.append(im);
+    $('previewLabel').textContent='Poster preview';
+  }
+}
+async function compressPoster(file){
+  if(!file||!file.type.startsWith('image/'))throw new Error('Choose an image file.');
+  let source;
+  if(window.createImageBitmap){
+    try{source=await createImageBitmap(file)}catch(e){}
+  }
+  if(!source){
+    source=await new Promise((resolve,reject)=>{
+      const objectUrl=URL.createObjectURL(file),img=new Image();
+      img.onload=()=>{URL.revokeObjectURL(objectUrl);resolve(img)};
+      img.onerror=()=>{URL.revokeObjectURL(objectUrl);reject(new Error('Could not read image.'))};
+      img.src=objectUrl;
+    });
+  }
+  const scale=Math.min(1,1000/Math.max(source.width,source.height));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(source.width*scale));
+  canvas.height=Math.max(1,Math.round(source.height*scale));
+  const ctx=canvas.getContext('2d');
+  ctx.drawImage(source,0,0,canvas.width,canvas.height);
+  if(typeof source.close==='function')source.close();
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.8));
+  if(!blob)throw new Error('Could not prepare this image.');
+  return await new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(reader.result);
+    reader.onerror=()=>reject(new Error('Could not save this image.'));
+    reader.readAsDataURL(blob);
+  });
 }
 function openEditor(id){
   editing=id;const s=shows.find(x=>x.id===id);
+  pendingImage=s?.image||'';
   $('editorTitle').textContent=s?'Edit serial':'Add serial';
-  $('name').value=s?.name||'';$('url').value=s?.url||'';$('image').value=s?.image||'';
+  $('name').value=s?.name||'';$('url').value=s?.url||'';
+  $('posterFile').value='';
   $('delete').style.display=s?'inline-block':'none';updatePreview();openSheet('editor');
   if(!s)setTimeout(()=>$('name').focus(),350);
 }
@@ -389,14 +439,20 @@ $('settings').onclick=openManager;
 $('close').onclick=()=>closeSheet('manager');
 $('add').onclick=()=>openEditor(null);
 $('cancel').onclick=closeEditor;$('cancel2').onclick=closeEditor;
-$('image').addEventListener('input',updatePreview);
+$('choosePoster').onclick=()=>$('posterFile').click();
+$('removePoster').onclick=()=>{pendingImage='';$('posterFile').value='';updatePreview()};
+$('posterFile').onchange=async e=>{
+  const file=e.target.files&&e.target.files[0];if(!file)return;
+  try{pendingImage=await compressPoster(file);updatePreview();toast('Poster ready. Tap Save to apply.')}
+  catch(err){toast(err.message||'Could not load that image.')}
+  e.target.value='';
+};
 ['manager','editor'].forEach(id=>$(id).addEventListener('click',e=>{if(e.target.id===id)closeSheet(id)}));
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if($('editor').classList.contains('open'))closeEditor();else closeSheet('manager')}});
 $('save').onclick=()=>{
-  const name=$('name').value.trim(),url=$('url').value.trim(),image=$('image').value.trim();
+  const name=$('name').value.trim(),url=$('url').value.trim(),image=pendingImage;
   if(!name){toast('Please enter a serial name.');$('name').focus();return}
   if(url&&!safeUrl(url)){toast('That link needs to start with https://');$('url').focus();return}
-  if(image&&!safeUrl(image)){toast('That image link needs to start with https://');$('image').focus();return}
   if(editing){Object.assign(shows.find(x=>x.id===editing),{name,url,image})}
   else shows.push({id:uid(),name,url,image,color:palette[shows.length%palette.length]});
   saveData();render();renderManager();closeEditor();toast('Saved '+name);
@@ -413,7 +469,7 @@ $('file').onchange=async e=>{
   try{
     const v=JSON.parse(await f.text());
     if(!Array.isArray(v)||!v.every(x=>x&&typeof x.name==='string'))throw Error();
-    shows=v.map((x,i)=>({id:x.id||uid(),name:x.name,url:safeUrl(x.url||''),image:safeUrl(x.image||''),color:x.color||palette[i%palette.length],last:Number(x.last)||undefined}));
+    shows=v.map((x,i)=>({id:x.id||uid(),name:x.name,url:safeUrl(x.url||''),image:safeImage(x.image||''),color:x.color||palette[i%palette.length],last:Number(x.last)||undefined}));
     saveData();render();renderManager();toast('Backup imported');
   }catch(err){toast('That backup file could not be read.')}
   e.target.value='';
