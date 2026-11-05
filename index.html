@@ -262,13 +262,48 @@ function openShow(s){
 }
 
 // On Android, ask the installed JioHotstar app to open the link; fall back to the normal link if the app isn't there.
-function launch(link){
-  const u=new URL(link);
-  const isHotstar=/(^|\.)(hotstar\.com|jiohotstar\.com)$/i.test(u.hostname);
-  if(/Android/i.test(navigator.userAgent)&&isHotstar){
-    location.href='intent://'+u.host+u.pathname+u.search+'#Intent;scheme='+u.protocol.slice(0,-1)+';package=in.startv.hotstar;S.browser_fallback_url='+encodeURIComponent(link)+';end';
-  }else window.open(link,'_blank','noopener');
+
+function launch(link) {
+  let url;
+
+  try {
+    url = new URL(link);
+  } catch {
+    alert("Invalid JioHotstar link.");
+    return;
+  }
+
+  const host = url.hostname.toLowerCase();
+
+  const isHotstar =
+    host === "hotstar.com" ||
+    host.endsWith(".hotstar.com") ||
+    host === "jiohotstar.com" ||
+    host.endsWith(".jiohotstar.com");
+
+  if (!isHotstar || url.protocol !== "https:") {
+    alert("Please enter a valid JioHotstar link.");
+    return;
+  }
+
+  if (/Android/i.test(navigator.userAgent)) {
+    const intentURL =
+      "intent://" +
+      url.host +
+      url.pathname +
+      url.search +
+      "#Intent;" +
+      "scheme=https;" +
+      "action=android.intent.action.VIEW;" +
+      "package=in.startv.hotstar;" +
+      "end";
+
+    window.location.href = intentURL;
+  } else {
+    window.open(url.href, "_blank", "noopener");
+  }
 }
+
 
 function makeCard(s,i,intro){
   const card=el('div','card');
