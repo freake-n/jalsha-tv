@@ -263,6 +263,7 @@ function openShow(s){
 
 // On Android, ask the installed JioHotstar app to open the link; fall back to the normal link if the app isn't there.
 
+
 function launch(link) {
   let url;
 
@@ -282,27 +283,14 @@ function launch(link) {
     host.endsWith(".jiohotstar.com");
 
   if (!isHotstar || url.protocol !== "https:") {
-    alert("Please enter a valid JioHotstar link.");
+    alert("Please enter a valid JioHotstar HTTPS link.");
     return;
   }
 
-  if (/Android/i.test(navigator.userAgent)) {
-    const intentURL =
-      "intent://" +
-      url.host +
-      url.pathname +
-      url.search +
-      "#Intent;" +
-      "scheme=https;" +
-      "action=android.intent.action.VIEW;" +
-      "package=in.startv.hotstar;" +
-      "end";
-
-    window.location.href = intentURL;
-  } else {
-    window.open(url.href, "_blank", "noopener");
-  }
+  // Let Android's verified App Links handling open JioHotstar.
+  window.location.href = url.href;
 }
+
 
 
 function makeCard(s,i,intro){
